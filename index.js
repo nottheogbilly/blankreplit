@@ -1,11 +1,6 @@
 const express = require('express');
-const fs = require('fs');
-const path = require('path');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-const USER_FILE = path.join(__dirname, 'users.json');
 
 app.use(express.json());
 app.use(express.static('public'));
@@ -25,21 +20,10 @@ function getCookies(req) {
   return list;
 }
 
-// ===== LOAD/SAVE USERS =====
-function loadUsers() {
-  try {
-    if (fs.existsSync(USER_FILE)) {
-      return JSON.parse(fs.readFileSync(USER_FILE));
-    }
-  } catch {}
-  return [];
-}
-
-function saveUsers(users) {
-  fs.writeFileSync(USER_FILE, JSON.stringify(users, null, 2));
-}
-
-let users = loadUsers();
+// ===== IN-MEMORY STORAGE (replace later with Firebase) =====
+let users = [];
+let messages = [];
+let nextId = 1;
 
 // ===== SIGNUP =====
 app.post('/signup', (req, res) => {
@@ -52,7 +36,6 @@ app.post('/signup', (req, res) => {
     return res.json({ error: "User exists" });
 
   users.push({ username, password });
-  saveUsers(users);
 
   res.json({ success: true });
 });
@@ -67,7 +50,6 @@ app.post('/login', (req, res) => {
 
   if (!user) return res.json({ error: "Invalid login" });
 
-  // 🍪 set cookie
   res.setHeader(
     "Set-Cookie",
     `user=${username}; Path=/; HttpOnly`
@@ -82,27 +64,66 @@ app.post('/logout', (req, res) => {
   res.json({ success: true });
 });
 
-// ===== AUTH CHECK =====
+// ===== CHECK USER =====
 app.get('/me', (req, res) => {
+  const cookies = getCookies(req);
+
+  if (!cookies.user) {
+    return res.status(401).json({ error: "Not logged in" });
+  }
+
+  res.json({ username: cookies.user });
+});
+
+// ===== SEND MESSAGE (PROTECTED) =====
+app.post('/send', (req, res) => {
   const cookies = getCookies(req);
   const username = cookies.user;
 
   if (!username) {
-    return res.status(401).json({ error: "Not logged in" });
-  }
-
-  res.json({ username });
-});
-
-// ===== PROTECTED EXAMPLE =====
-app.get('/protected', (req, res) => {
-  const cookies = getCookies(req);
-
-  if (!cookies.user) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  res.json({ message: "You are logged in as " + cookies.user });
+  const { message } = req.body;
+
+  if (!message || message.length > 500) {
+    return res.json({ error: "Invalid message" });
+  }
+
+  const msg = {
+    id: nextId++,
+    username,
+    message
+  };
+
+  messages.push(msg);
+
+  // keep last 100
+  if (messages.length > 100) {
+    messages = messages.slice(-100);
+  }
+
+  res.json(msg);
+});
+
+// ===== GET MESSAGES (PROTECTED) =====
+app.get('/messages', (req, res) => {
+  const cookies = getCookies(req);
+  const username = cookies.user;
+
+  if (!username) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const since = parseInt(req.query.since);
+
+  let result = messages;
+
+  if (!isNaN(since)) {
+    result = messages.filter(m => m.id > since);
+  }
+
+  res.json(result);
 });
 
 // ===== START =====
