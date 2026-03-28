@@ -1,7 +1,6 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,8 +9,22 @@ const MSG_FILE = path.join(__dirname, 'messages.json');
 const USER_FILE = path.join(__dirname, 'users.json');
 
 app.use(express.json());
-app.use(cookieParser());
 app.use(express.static('public'));
+
+// ===== SIMPLE COOKIE PARSER =====
+function getCookies(req) {
+  const list = {};
+  const rc = req.headers.cookie;
+
+  if (rc) {
+    rc.split(';').forEach(cookie => {
+      const parts = cookie.split('=');
+      list[parts.shift().trim()] = decodeURI(parts.join('='));
+    });
+  }
+
+  return list;
+}
 
 // ===== LOAD/SAVE =====
 function load(file) {
@@ -21,9 +34,7 @@ function load(file) {
       if (!data) return [];
       return JSON.parse(data);
     }
-  } catch (e) {
-    console.log("Error loading:", file);
-  }
+  } catch (e) {}
   return [];
 }
 
@@ -61,61 +72,50 @@ app.post('/login', (req, res) => {
 
   if (!user) return res.json({ error: "Invalid login" });
 
-  // 🍪 set cookie
-  res.cookie('user', username, { httpOnly: false });
+  // 🍪 manually set cookie
+  res.setHeader('Set-Cookie', `user=${username}; Path=/`);
 
   res.json({ success: true });
 });
 
-// ===== SEND MESSAGE (PROTECTED) =====
+// ===== SEND MESSAGE =====
 app.post('/send', (req, res) => {
-  const username = req.cookies.user;
+  const cookies = getCookies(req);
+  const username = cookies.user;
 
   if (!username) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
   const { message } = req.body;
-
   if (!message) return res.json({ error: "No message" });
 
   const msg = {
     id: nextId++,
     username,
-    message,
-    room: "general"
+    message
   };
 
   messages.push(msg);
-
-  if (messages.length > 100) {
-    messages = messages.slice(-100);
-  }
+  if (messages.length > 100) messages = messages.slice(-100);
 
   save(MSG_FILE, messages);
-
   res.json(msg);
 });
 
-// ===== GET MESSAGES (PROTECTED) =====
+// ===== GET MESSAGES =====
 app.get('/messages', (req, res) => {
-  const username = req.cookies.user;
+  const cookies = getCookies(req);
+  const username = cookies.user;
 
   if (!username) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const since = parseInt(req.query.since);
-  let result = messages;
-
-  if (!isNaN(since)) {
-    result = result.filter(m => m.id > since);
-  }
-
-  res.json(result);
+  res.json(messages);
 });
 
-// ===== START SERVER =====
+// ===== START =====
 app.listen(PORT, () => {
   console.log("Server running on port " + PORT);
 });
