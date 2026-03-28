@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,21 +10,20 @@ const MSG_FILE = path.join(__dirname, 'messages.json');
 const USER_FILE = path.join(__dirname, 'users.json');
 
 app.use(express.json());
+app.use(cookieParser());
+app.use(express.static('public'));
 
-// CORS
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', '*');
-  next();
-});
-
-// LOAD/SAVE
+// ===== LOAD/SAVE =====
 function load(file) {
   try {
     if (fs.existsSync(file)) {
-      return JSON.parse(fs.readFileSync(file));
+      const data = fs.readFileSync(file, 'utf8');
+      if (!data) return [];
+      return JSON.parse(data);
     }
-  } catch {}
+  } catch (e) {
+    console.log("Error loading:", file);
+  }
   return [];
 }
 
@@ -35,7 +35,7 @@ let messages = load(MSG_FILE);
 let users = load(USER_FILE);
 let nextId = messages.length ? messages[messages.length - 1].id + 1 : 1;
 
-// SIGNUP
+// ===== SIGNUP =====
 app.post('/signup', (req, res) => {
   const { username, password } = req.body;
 
@@ -51,56 +51,71 @@ app.post('/signup', (req, res) => {
   res.json({ success: true });
 });
 
-// LOGIN
+// ===== LOGIN =====
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
-  const user = users.find(u =>
-    u.username === username && u.password === password
+  const user = users.find(
+    u => u.username === username && u.password === password
   );
 
   if (!user) return res.json({ error: "Invalid login" });
 
+  // 🍪 set cookie
+  res.cookie('user', username, { httpOnly: false });
+
   res.json({ success: true });
 });
 
-// SEND
+// ===== SEND MESSAGE (PROTECTED) =====
 app.post('/send', (req, res) => {
-  const { username, message, room } = req.body;
+  const username = req.cookies.user;
 
-  if (!username || !message) return res.json({ error: "Bad data" });
+  if (!username) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const { message } = req.body;
+
+  if (!message) return res.json({ error: "No message" });
 
   const msg = {
     id: nextId++,
     username,
     message,
-    room: room || "general"
+    room: "general"
   };
 
   messages.push(msg);
-  if (messages.length > 100) messages = messages.slice(-100);
+
+  if (messages.length > 100) {
+    messages = messages.slice(-100);
+  }
 
   save(MSG_FILE, messages);
 
   res.json(msg);
 });
 
-// GET
+// ===== GET MESSAGES (PROTECTED) =====
 app.get('/messages', (req, res) => {
-  const since = parseInt(req.query.since);
-  const room = req.query.room;
+  const username = req.cookies.user;
 
+  if (!username) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const since = parseInt(req.query.since);
   let result = messages;
 
   if (!isNaN(since)) {
     result = result.filter(m => m.id > since);
   }
 
-  if (room) {
-    result = result.filter(m => m.room === room);
-  }
-
   res.json(result);
 });
 
-app.listen(PORT, () => console.log("Running on " + PORT));
+// ===== START SERVER =====
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
+});
