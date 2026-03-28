@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { background:#0f0f1a; color:white; font-family:Arial; text-align:center; }
+input, button { width:90%; padding:10px; margin:5px; border-radius:6px; border:none; }
+button { background:#5865f2; color:white; }
+.hidden { display:none; }
+</style>
+</head>
+<body>
+
+<h2>Auth</h2>
+
+<div id="loginBox">
+  <input id="loginUser" placeholder="Username">
+  <input id="loginPass" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <button onclick="showSignup()">Go to Signup</button>
+</div>
+
+<div id="signupBox" class="hidden">
+  <input id="signupUser" placeholder="Username">
+  <input id="signupPass" type="password" placeholder="Password">
+  <button onclick="signup()">Sign Up</button>
+  <button onclick="showLogin()">Go to Login</button>
+</div>
+
+<script>
+const BASE = "";
+
+function showSignup() {
+  loginBox.classList.add("hidden");
+  signupBox.classList.remove("hidden");
+}
+
+function showLogin() {
+  signupBox.classList.add("hidden");
+  loginBox.classList.remove("hidden");
+}
+
+function signup() {
+  fetch("/signup", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      username: signupUser.value,
+      password: signupPass.value
+    })
+  }).then(r=>r.json()).then(alert);
+}
+
+function login() {
+  fetch("/login", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      username: loginUser.value,
+      password: loginPass.value
+    })
+  })
+  .then(r=>r.json())
+  .then(d=>{
+    if(d.success){
+      location.href = "/chat.html";
+    } else {
+      alert("Login failed");
+    }
+  });
+}
+</script>
+
+</body>
+</html>
