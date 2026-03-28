@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { background:#0f0f1a; color:white; font-family:Arial; }
+#chat { max-height:60vh; overflow-y:auto; }
+.msg { background:#1e1e2f; margin:5px; padding:8px; border-radius:6px; }
+input, button { width:100%; padding:10px; margin:5px 0; border:none; border-radius:6px; }
+button { background:#5865f2; color:white; }
+</style>
+</head>
+
+<body>
+
+<h2>General Chat</h2>
+
+<div id="chat"></div>
+
+<input id="msg" placeholder="Message">
+<button onclick="send()">Send</button>
+
+<script>
+let lastId = 0;
+
+// 🚫 block if not logged in
+fetch("/messages")
+.then(r=>{
+  if(r.status === 401){
+    alert("Not logged in");
+    location.href = "/";
+  }
+});
+
+function send(){
+  fetch("/send", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ message: msg.value })
+  });
+
+  msg.value="";
+}
+
+setInterval(()=>{
+  fetch("/messages?since=" + lastId)
+  .then(r=>{
+    if(r.status === 401){
+      location.href = "/";
+      return;
+    }
+    return r.json();
+  })
+  .then(data=>{
+    if(!data) return;
+
+    data.forEach(m=>{
+      let div=document.createElement("div");
+      div.className="msg";
+      div.textContent = m.username + ": " + m.message;
+      chat.appendChild(div);
+      lastId = Math.max(lastId, m.id);
+    });
+
+    chat.scrollTop = chat.scrollHeight;
+  });
+},2000);
+</script>
+
+</body>
+</html>
