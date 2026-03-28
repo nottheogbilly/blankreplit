@@ -5,83 +5,102 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const MESSAGES_FILE = path.join(__dirname, 'messages.json');
-const MAX_MESSAGES = 50;
+const MSG_FILE = path.join(__dirname, 'messages.json');
+const USER_FILE = path.join(__dirname, 'users.json');
 
 app.use(express.json());
 
-// CORS (important for Android/Python)
+// CORS
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  res.setHeader('Access-Control-Allow-Headers', '*');
   next();
 });
 
-// Load messages
-function loadMessages() {
+// LOAD/SAVE
+function load(file) {
   try {
-    if (fs.existsSync(MESSAGES_FILE)) {
-      return JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
+    if (fs.existsSync(file)) {
+      return JSON.parse(fs.readFileSync(file));
     }
-  } catch (e) {
-    console.error(e);
-  }
+  } catch {}
   return [];
 }
 
-// Save messages
-function saveMessages(messages) {
-  fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2));
+function save(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-let messages = loadMessages();
+let messages = load(MSG_FILE);
+let users = load(USER_FILE);
 let nextId = messages.length ? messages[messages.length - 1].id + 1 : 1;
 
-// POST /send
-app.post('/send', (req, res) => {
-  const { username, message } = req.body || {};
+// SIGNUP
+app.post('/signup', (req, res) => {
+  const { username, password } = req.body;
 
-  if (!username || !message) {
-    return res.status(400).json({ error: 'Missing username or message' });
-  }
+  if (!username || !password)
+    return res.json({ error: "Missing fields" });
+
+  if (users.find(u => u.username === username))
+    return res.json({ error: "User exists" });
+
+  users.push({ username, password });
+  save(USER_FILE, users);
+
+  res.json({ success: true });
+});
+
+// LOGIN
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+
+  const user = users.find(u =>
+    u.username === username && u.password === password
+  );
+
+  if (!user) return res.json({ error: "Invalid login" });
+
+  res.json({ success: true });
+});
+
+// SEND
+app.post('/send', (req, res) => {
+  const { username, message, room } = req.body;
+
+  if (!username || !message) return res.json({ error: "Bad data" });
 
   const msg = {
     id: nextId++,
-    username: username.trim(),
-    message: message.trim(),
-    timestamp: new Date().toISOString()
+    username,
+    message,
+    room: room || "general"
   };
 
   messages.push(msg);
+  if (messages.length > 100) messages = messages.slice(-100);
 
-  if (messages.length > MAX_MESSAGES) {
-    messages = messages.slice(-MAX_MESSAGES);
-  }
-
-  saveMessages(messages);
+  save(MSG_FILE, messages);
 
   res.json(msg);
 });
 
-// GET /messages
+// GET
 app.get('/messages', (req, res) => {
   const since = parseInt(req.query.since);
+  const room = req.query.room;
+
   let result = messages;
 
   if (!isNaN(since)) {
     result = result.filter(m => m.id > since);
   }
 
+  if (room) {
+    result = result.filter(m => m.room === room);
+  }
+
   res.json(result);
 });
 
-// Root
-app.get('/', (req, res) => {
-  res.send('Chat API running 👍');
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log("Running on " + PORT));
